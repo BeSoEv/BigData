@@ -1,0 +1,110 @@
+services:
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: scd2-rustfs
+    restart: unless-stopped
+
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: "0.0.0.0:9000"
+      RUSTFS_CONSOLE_ADDRESS: "0.0.0.0:9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ACCESS_KEY: "scd2admin"
+      RUSTFS_SECRET_KEY: "scd2-secret-2026"
+      RUSTFS_OBS_LOGGER_LEVEL: info
+
+    volumes:
+      - rustfs_data:/data
+
+    networks:
+      - scd2-network
+
+  spark-master:
+    image: scd2-spark:3.5.3
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: scd2-spark-master
+
+    command: >
+      bash -c "
+        /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+        --host spark-master
+        --port 7077
+        --webui-port 8080
+      "
+
+    environment:
+      - SPARK_MODE=master
+      - SPARK_LOG_LEVEL=INFO
+      - SPARK_NO_DAEMONIZE=true
+
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+
+    networks:
+      - scd2-network
+
+
+  spark-worker:
+    image: scd2-spark:3.5.3
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: scd2-spark-worker
+
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.worker.Worker
+      - spark://spark-master:7077
+      - --webui-port
+      - "8081"
+
+    environment:
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_LOG_LEVEL=INFO
+      - SPARK_NO_DAEMONIZE=true
+
+    depends_on:
+      - spark-master
+
+    ports:
+      - "8081:8081"
+
+    networks:
+      - scd2-network
+
+  jupyter:
+    image: scd2-jupyter:3.5.3
+    container_name: scd2-jupyter
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    user: root
+    ports:
+      - "8888:8888"
+      - "4040:4040"
+    environment:
+      SPARK_MASTER: spark://spark-master:7077
+      PYSPARK_PYTHON: python3
+    volumes:
+      - ./notebooks:/home/jupyter/work
+    depends_on:
+      - spark-master
+      - spark-worker
+      - rustfs
+    networks:
+      - scd2-network
+
+networks:
+  scd2-network:
+
+volumes:
+  rustfs_data:
