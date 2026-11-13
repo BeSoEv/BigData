@@ -7,3 +7,9 @@
 # Python
 __pycache__/
 *.pyc
+
+# Input data and generated results
+data/
+results/
+
+.Trash-*/
